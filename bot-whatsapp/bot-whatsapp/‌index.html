@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel De Apuestas</title>
+
+<style>
+/* === MISMO CSS QUE YA TENÍAS === */
+:root{
+  --bg:#0b0f14;
+  --card:#141a22;
+  --accent:#1abc9c;
+  --danger:#e74c3c;
+  --info:#3498db;
+  --text:#ecf0f1;
+  --muted:#95a5a6;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+
+body{
+  background:linear-gradient(180deg,#0b0f14,#06080c);
+  color:var(--text);
+  font-family:'Segoe UI',sans-serif;
+  padding:12px;
+}
+
+.container{max-width:900px;margin:auto}
+
+.panel{
+  background:var(--card);
+  border-radius:14px;
+  padding:16px;
+  margin-bottom:18px;
+}
+
+select,input,button{
+  width:100%;
+  padding:12px;
+  margin:6px 0;
+  border-radius:8px;
+  border:none;
+}
+
+input,select{
+  background:#0f141c;
+  color:#fff;
+}
+
+.btn-main{background:var(--accent)}
+.btn-edit{background:var(--info);color:#fff}
+.btn-del{background:var(--danger);color:#fff}
+
+.card{
+  background:#10161f;
+  padding:12px;
+  border-radius:12px;
+  margin-bottom:10px;
+  border-left:4px solid var(--accent);
+}
+
+.actions{display:flex;gap:8px;margin-top:8px}
+@media(max-width:480px){.actions{flex-direction:column}}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>🎲 Panel de Apuestas</h1>
+<small>ADMIN</small>
+
+<div class="panel">
+  <h3>📂 Categoría</h3>
+  <select id="tipo" onchange="cargar()">
+    <option value="">-- Selecciona --</option>
+    <option value="futbol">⚽ Fútbol</option>
+    <option value="basquet">🏀 Básquet</option>
+    <option value="dota">🎮 Dota</option>
+    <option value="malcriada">🔥 Malcriada</option>
+  </select>
+  <input type="date" id="fecha" onchange="guardarFecha()">
+</div>
+
+<div class="panel">
+  <h3>➕ Nueva Apuesta</h3>
+  <input id="texto" placeholder="Ej: +2.5 goles">
+  <input id="link" placeholder="Link">
+  <button class="btn-main" onclick="crear()">Guardar apuesta</button>
+</div>
+
+<div class="panel">
+  <h3>📋 Apuestas</h3>
+  <div id="lista"></div>
+</div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteField }
+from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAm23THA3IGqwt5p3OD4QBWnPLcvleqlqY",
+  authDomain: "bot-whatsapp-a7445.firebaseapp.com",
+  projectId: "bot-whatsapp-a7445"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+let tipoActual = '';
+let dataCache = { lista:{} };
+
+const lista = document.getElementById('lista');
+const textoEl = document.getElementById('texto');
+const linkEl = document.getElementById('link');
+const fechaEl = document.getElementById('fecha');
+
+/* ASEGURAR DOCUMENTO */
+async function asegurarDoc(){
+  const ref = doc(db,'apuestas',tipoActual);
+  const snap = await getDoc(ref);
+  if(!snap.exists()){
+    await setDoc(ref,{ fecha:'', lista:{} });
+  }
+}
+
+/* READ */
+window.cargar = async () => {
+  tipoActual = tipo.value;
+  lista.innerHTML='';
+  if(!tipoActual) return;
+
+  await asegurarDoc();
+
+  const snap = await getDoc(doc(db,'apuestas',tipoActual));
+  dataCache = snap.data();
+  fechaEl.value = dataCache.fecha || '';
+
+  for(const id in dataCache.lista){
+    pintar(id,dataCache.lista[id]);
+  }
+};
+
+/* CREATE */
+window.crear = async () => {
+  if(!tipoActual) return alert('Selecciona categoría');
+  if(!textoEl.value) return alert('Escribe la apuesta');
+
+  await asegurarDoc();
+
+  const id = Date.now().toString();
+  const apuesta = { texto:textoEl.value, link:linkEl.value };
+
+  await updateDoc(doc(db,'apuestas',tipoActual),{
+    [`lista.${id}`]: apuesta
+  });
+
+  pintar(id,apuesta);
+  textoEl.value='';
+  linkEl.value='';
+};
+
+/* UPDATE */
+window.editar = async (id) => {
+  await updateDoc(doc(db,'apuestas',tipoActual),{
+    [`lista.${id}`]: {
+      texto:document.getElementById(`t_${id}`).value,
+      link:document.getElementById(`l_${id}`).value
+    }
+  });
+};
+
+/* DELETE */
+window.borrar = async (id) => {
+  await updateDoc(doc(db,'apuestas',tipoActual),{
+    [`lista.${id}`]: deleteField()
+  });
+  document.getElementById(`card_${id}`).remove();
+};
+
+/* FECHA */
+window.guardarFecha = async () => {
+  if(!tipoActual) return;
+  await asegurarDoc();
+  await updateDoc(doc(db,'apuestas',tipoActual),{
+    fecha:fechaEl.value
+  });
+};
+
+/* UI */
+function pintar(id,a){
+  const div=document.createElement('div');
+  div.className='card';
+  div.id=`card_${id}`;
+  div.innerHTML=`
+    <input id="t_${id}" value="${a.texto}">
+    <input id="l_${id}" value="${a.link||''}">
+    <div class="actions">
+      <button class="btn-edit" onclick="editar('${id}')">Guardar</button>
+      <button class="btn-del" onclick="borrar('${id}')">Borrar</button>
+    </div>`;
+  lista.appendChild(div);
+}
+</script>
+</body>
+</html>
